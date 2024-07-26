@@ -38,6 +38,12 @@ type DnsResponse struct {
 	QueryID      uint16
 	ResponseTime time.Time
 	RRName       string
+	Latency      time.Duration
+}
+
+type SlowResponse struct {
+	Query    DnsQuery
+	Response DnsResponse
 }
 
 func NewDnsAnalyzer(captureFile, sourceIP string, timeDelay time.Duration, outputFile, reportFile string, verbose bool) *DnsAnalyzer {
@@ -123,37 +129,34 @@ func (analyzer *DnsAnalyzer) analyze() {
 	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
 	totalPackets := 0
 
-	for range packetSource.Packets() {
-		totalPackets++
-	}
-
-	fmt.Printf("Total packets found %d in %s\n\n", totalPackets, analyzer.captureFile)
-
-	packetSource = gopacket.NewPacketSource(handle, handle.LinkType())
 	for packet := range packetSource.Packets() {
+		totalPackets++
 		analyzer.processPacket(packet)
 	}
 
+	fmt.Printf("Total packets found %d in %s\n\n", totalPackets, analyzer.captureFile)
 	fmt.Printf("Number of queries received: %d\n", len(analyzer.queriesReceived))
 	fmt.Printf("Number of responses sent: %d\n\n", len(analyzer.responsesSent))
 
 	var latencyTimes []time.Duration
-	var slowQueries []DnsQuery
+	var slowResps []SlowResponse
 
 	for _, query := range analyzer.queriesReceived {
 		queryMatch := false
 		for _, response := range analyzer.responsesSent {
 			if query.QueryID == response.QueryID {
 				latencyTime := response.ResponseTime.Sub(query.QueryTime)
+				response.Latency = latencyTime
+
 				if analyzer.verbose {
 					fmt.Printf("Query ID: %d, Latency Time: %s\n", query.QueryID, latencyTime)
 				}
 				latencyTimes = append(latencyTimes, latencyTime)
 				queryMatch = true
 				if latencyTime > analyzer.timeDelay {
-					slowQueries = append(slowQueries, query)
+					slowResps = append(slowResps, SlowResponse{Query: query, Response: response})
 				}
-				break
+				//break
 			}
 		}
 		if !queryMatch && analyzer.verbose {
@@ -161,7 +164,7 @@ func (analyzer *DnsAnalyzer) analyze() {
 		}
 	}
 
-	fmt.Printf("Total Slow Queries: %d\n", len(slowQueries))
+	fmt.Printf("Total Slow Queries: %d\n", len(slowResps))
 	fmt.Println("Saving slow queries to file")
 
 	file, err := os.Create(analyzer.outputFile)
@@ -170,8 +173,8 @@ func (analyzer *DnsAnalyzer) analyze() {
 	}
 	defer file.Close()
 	writer := bufio.NewWriter(file)
-	for _, query := range slowQueries {
-		fmt.Fprintf(writer, "Query: %s, Query ID: %d, Latency: %s\n", query.QueryRequest, query.QueryID, query.QueryTime)
+	for _, query := range slowResps {
+		fmt.Fprintf(writer, "Query: %s, Query ID: %d, Latency: %s\n", query.Query.QueryRequest, query.Query.QueryID, query.Response.Latency)
 	}
 	writer.Flush()
 
@@ -185,8 +188,8 @@ func (analyzer *DnsAnalyzer) analyze() {
 	}
 
 	total := totalPackets
-	slow := len(slowQueries)
-	percentageDifference := float64((total - slow)) * 100
+	slow := len(slowResps)
+	percentageDifference := float64((total - slow)) / float64(total) * 100
 	fmt.Printf("\nTotal Packets: %d\n", total)
 	fmt.Printf("Slow Queries: %d\n", slow)
 	fmt.Printf("Percentage Difference: %.2f%%\n", percentageDifference)
