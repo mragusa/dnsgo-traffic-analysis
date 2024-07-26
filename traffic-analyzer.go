@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	//"encoding/binary"
 	"flag"
 	"fmt"
 	"os"
@@ -94,7 +93,7 @@ func (analyzer *DnsAnalyzer) processPacket(packet gopacket.Packet) {
 						QueryRequest: string(dns.Questions[0].Name),
 						QueryTime:    packet.Metadata().Timestamp,
 					})
-					analyzer.recordTypes[dns.Questions[0].Type]++
+					analyzer.recordTypes[uint16(dns.Questions[0].Type)]++
 					analyzer.recordName[string(dns.Questions[0].Name)]++
 					analyzer.recordNameID[string(dns.Questions[0].Name)] = append(analyzer.recordNameID[string(dns.Questions[0].Name)], dns.ID)
 				}
