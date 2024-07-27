@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/google/gopacket"
@@ -136,39 +137,55 @@ func (analyzer *DnsAnalyzer) analyze() {
 		totalPackets++
 		analyzer.processPacket(packet)
 	}
-
-	fmt.Printf("Total packets found %d in %s\n\n", totalPackets, analyzer.captureFile)
-	fmt.Printf("Number of queries received: %d\n", len(analyzer.queriesReceived))
-	fmt.Printf("Number of responses sent: %d\n\n", len(analyzer.responsesSent))
+	fmt.Printf("|  %10s  |  %10s  |\n", "File Name", analyzer.captureFile)
+	fmt.Printf("|  %10s  |  %10d  |\n", "Total Packets", totalPackets)
+	fmt.Printf("|  %10s  |  %10d  |\n", "Queries Received", len(analyzer.queriesReceived))
+	fmt.Printf("|  %10s  |  %10d  |\n", "Query Responses", len(analyzer.responsesSent))
 
 	var latencyTimes []time.Duration
 	var slowResps []SlowResponse
+	var addMtx sync.Mutex
+	var wg sync.WaitGroup
 
 	for _, query := range analyzer.queriesReceived {
-		queryMatch := false
-		for _, response := range analyzer.responsesSent {
-			if query.QueryID == response.QueryID {
-				latencyTime := response.ResponseTime.Sub(query.QueryTime)
-				response.Latency = latencyTime
+		wg.Add(1)
 
-				if analyzer.verbose {
-					fmt.Printf("Query ID: %d, Latency Time: %s\n", query.QueryID, latencyTime)
+		//Add a query goroutine to the waitgroup
+		//In this construction unlimited goroutines are spun up. Maybe limit to runtime.NumCPUs()
+		go func() {
+			//Remove yourself from the workgroup after work is done.
+			defer wg.Done()
+			queryMatch := false
+			for _, response := range analyzer.responsesSent {
+				if query.QueryID == response.QueryID {
+					latencyTime := response.ResponseTime.Sub(query.QueryTime)
+					response.Latency = latencyTime
+
+					if analyzer.verbose {
+						fmt.Printf("Query ID: %d, Latency Time: %s\n", query.QueryID, latencyTime)
+					}
+					latencyTimes = append(latencyTimes, latencyTime)
+					queryMatch = true
+					if latencyTime > analyzer.timeDelay {
+						//Lock so that multiple threads dont access slowResps at the same time.
+						addMtx.Lock()
+						slowResps = append(slowResps, SlowResponse{Query: query, Response: response})
+						//Unlock after you're done.
+						addMtx.Unlock()
+					}
 				}
-				latencyTimes = append(latencyTimes, latencyTime)
-				queryMatch = true
-				if latencyTime > analyzer.timeDelay {
-					slowResps = append(slowResps, SlowResponse{Query: query, Response: response})
-				}
-				//break
 			}
-		}
-		if !queryMatch && analyzer.verbose {
-			fmt.Printf("No response found for Query ID: %d\n", query.QueryID)
-		}
+			if !queryMatch && analyzer.verbose {
+				fmt.Printf("No response found for Query ID: %d\n", query.QueryID)
+			}
+		}()
 	}
 
-	fmt.Printf("Total Slow Queries: %d\n", len(slowResps))
-	fmt.Println("Saving slow queries to file")
+	//Wait for all my threads to finish.
+	wg.Wait()
+
+	fmt.Printf("|  %10s  |  %10d  |\n", "Slow Queries", len(slowResps))
+	fmt.Printf("\nSaving slow queries to file\n")
 
 	file, err := os.Create(analyzer.outputFile)
 	if err != nil {
@@ -185,20 +202,20 @@ func (analyzer *DnsAnalyzer) analyze() {
 		sort.Slice(latencyTimes, func(i, j int) bool {
 			return latencyTimes[i] < latencyTimes[j]
 		})
-		fmt.Printf("Lowest Latency: %s\n", latencyTimes[0])
-		fmt.Printf("Highest Latency: %s\n", latencyTimes[len(latencyTimes)-1])
-		fmt.Printf("Median Latency: %s\n", latencyTimes[len(latencyTimes)/2])
+		fmt.Printf("|  %10s  |  %10v  |\n", "Lowest Latency", latencyTimes[0])
+		fmt.Printf("|  %10s  |  %10v  |\n", "Highest Latency", latencyTimes[len(latencyTimes)-1])
+		fmt.Printf("|  %10s  |  %10v  |\n", "Median Latency", latencyTimes[len(latencyTimes)/2])
 	}
 
 	total := totalPackets
 	slow := len(slowResps)
 	percentageDifference := float64((total - slow)) / float64(total) * 100
-	fmt.Printf("\nTotal Packets: %d\n", total)
-	fmt.Printf("Slow Queries: %d\n", slow)
-	fmt.Printf("Percentage Difference: %.2f%%\n", percentageDifference)
+	fmt.Printf("|  %10s  |  %10d  |\n", "Total Packets", total)
+	fmt.Printf("|  %10s  |  %10d  |\n", "Slow Queries", slow)
+	fmt.Printf("|  %10s  |  %10.3f  |\n", "Percentage Difference", percentageDifference)
 
 	// Save sorted record names and their counts to the report file
-	fmt.Println("Saving Total Names Queried Report")
+	fmt.Printf("\nSaving Total Names Queried Report\n")
 	reportFile, err := os.Create(analyzer.reportFile)
 	if err != nil {
 		panic(err)
@@ -219,8 +236,9 @@ func (analyzer *DnsAnalyzer) analyze() {
 
 	// Print total record types queried
 	fmt.Println("Total Record Types Queried")
+	fmt.Printf("|  %10s  |  %-10s  |\n", "Type", "Count")
 	for k, v := range analyzer.recordTypes {
-		fmt.Printf("Type: %s Count: %d\n", analyzer.recordTypeLookup[k], v)
+		fmt.Printf("|  %10s  |  %-10d  |\n", analyzer.recordTypeLookup[k], v)
 	}
 }
 
