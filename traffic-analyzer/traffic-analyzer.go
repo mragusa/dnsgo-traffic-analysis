@@ -261,7 +261,7 @@ func (analyzer *DnsAnalyzer) analyze() {
 	percentageDifference := float64((total - slow)) / float64(total) * 100
 	fmt.Printf("|  %10s  |  %10d  |\n", "Total Packets", total)
 	fmt.Printf("|  %10s  |  %10d  |\n", "Slow Queries", slow)
-	fmt.Printf("|  %10s  |  %10.3f  |\n\n", "Percentage Good", percentageDifference)
+	fmt.Printf("|  %10s  |  %10.3f  |\n\n", "Percentage of Good Traffic", percentageDifference)
 
 	// Save sorted record names and their counts to the report file
 	fmt.Printf("Saving Total Names Queried Report\n\n")
