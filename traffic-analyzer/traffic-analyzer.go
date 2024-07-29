@@ -25,7 +25,7 @@ type DnsAnalyzer struct {
 	reportFile       string
 	verbose          bool
 	queriesReceived  []DnsQuery
-	responsesSent    []DnsResponse
+	responsesSent    map[string][]DnsResponse
 	recordName       map[string]int
 	recordNameID     map[string][]uint16
 	recordTypes      map[uint16]int
@@ -36,6 +36,7 @@ type DnsQuery struct {
 	QueryID      uint16
 	QueryRequest string
 	QueryTime    time.Time
+	Key          string
 }
 
 type DnsResponse struct {
@@ -50,17 +51,31 @@ type SlowResponse struct {
 	Response DnsResponse
 }
 
+func calculateMean(latencies []time.Duration) time.Duration {
+	if len(latencies) == 0 {
+		return 0
+	}
+
+	var mean int64
+	for i, latency := range latencies {
+		mean += int64(int64(latency)-mean) / int64(i+1)
+	}
+
+	return time.Duration(mean)
+}
+
 func NewDnsAnalyzer(captureFile, sourceIP string, timeDelay time.Duration, outputFile, reportFile string, verbose bool) *DnsAnalyzer {
 	return &DnsAnalyzer{
-		captureFile:  captureFile,
-		sourceIP:     sourceIP,
-		timeDelay:    timeDelay,
-		outputFile:   outputFile,
-		reportFile:   reportFile,
-		verbose:      verbose,
-		recordName:   make(map[string]int),
-		recordNameID: make(map[string][]uint16),
-		recordTypes:  make(map[uint16]int),
+		captureFile:   captureFile,
+		sourceIP:      sourceIP,
+		timeDelay:     timeDelay,
+		outputFile:    outputFile,
+		reportFile:    reportFile,
+		verbose:       verbose,
+		responsesSent: make(map[string][]DnsResponse),
+		recordName:    make(map[string]int),
+		recordNameID:  make(map[string][]uint16),
+		recordTypes:   make(map[uint16]int),
 		recordTypeLookup: map[uint16]string{
 			1: "A", 28: "AAAA", 62: "CSYNC", 49: "DHCID", 32769: "DLV",
 			39: "DNAME", 48: "DNSKEY", 43: "DS", 108: "EUI48", 109: "EUI64",
@@ -85,6 +100,7 @@ func NewDnsAnalyzer(captureFile, sourceIP string, timeDelay time.Duration, outpu
 }
 
 func (analyzer *DnsAnalyzer) processPacket(packet gopacket.Packet) {
+	//fmt.Printf("Packet: %+v\n", packet)
 	if analyzer.verbose {
 		fmt.Println(packet)
 	}
@@ -102,28 +118,41 @@ func (analyzer *DnsAnalyzer) processPacket(packet gopacket.Packet) {
 						QueryID:      dns.ID,
 						QueryRequest: string(dns.Questions[0].Name),
 						QueryTime:    packet.Metadata().Timestamp,
+						Key:          fmt.Sprintf("%d%s", dns.ID, ip.SrcIP.String()),
 					})
 					analyzer.recordTypes[uint16(dns.Questions[0].Type)]++
 					analyzer.recordName[string(dns.Questions[0].Name)]++
 					analyzer.recordNameID[string(dns.Questions[0].Name)] = append(analyzer.recordNameID[string(dns.Questions[0].Name)], dns.ID)
 				}
 			} else { // DNS response
+				answers := ""
 				for _, ans := range dns.Answers {
-					analyzer.responsesSent = append(analyzer.responsesSent, DnsResponse{
-						QueryID:      dns.ID,
-						ResponseTime: packet.Metadata().Timestamp,
-						RRName:       string(ans.Name),
-					})
-					if analyzer.verbose {
-						fmt.Printf("%d %s %s\n", dns.ID, ans.Name, packet.Metadata().Timestamp)
-					}
+					answers += string(ans.Name) + ", "
 				}
+				response := DnsResponse{
+					QueryID:      dns.ID,
+					ResponseTime: packet.Metadata().Timestamp,
+					RRName:       string(answers),
+				}
+				key := fmt.Sprintf("%d%s", response.QueryID, ip.DstIP.String())
+
+				oldRes, found := analyzer.responsesSent[key]
+				if found {
+					analyzer.responsesSent[key] = append(oldRes, response)
+				} else {
+					analyzer.responsesSent[key] = []DnsResponse{response}
+				}
+				if analyzer.verbose {
+					fmt.Printf("%d %s %s\n", dns.ID, answers, packet.Metadata().Timestamp)
+				}
+
 			}
 		}
 	}
 }
 
 func (analyzer *DnsAnalyzer) analyze() {
+
 	handle, err := pcap.OpenOffline(analyzer.captureFile)
 	if err != nil {
 		panic(err)
@@ -145,22 +174,29 @@ func (analyzer *DnsAnalyzer) analyze() {
 	var latencyTimes []time.Duration
 	var slowResps []SlowResponse
 	var addMtx sync.Mutex
-	var wg sync.WaitGroup
+	//var wg sync.WaitGroup
 
 	for _, query := range analyzer.queriesReceived {
-		wg.Add(1)
+		//fmt.Printf("Considering query; %+v\n", query)
 
+		//wg.Add(1)
 		//Add a query goroutine to the waitgroup
 		//In this construction unlimited goroutines are spun up. Maybe limit to runtime.NumCPUs()
-		go func() {
-			//Remove yourself from the workgroup after work is done.
-			defer wg.Done()
-			queryMatch := false
-			for _, response := range analyzer.responsesSent {
+		//go func() {
+		//Remove yourself from the workgroup after work is done.
+		//defer wg.Done()
+		queryMatch := false
+		responseArr, found := analyzer.responsesSent[query.Key]
+		if found {
+			for _, response := range responseArr {
+				//fmt.Printf("Considering response; %+v\n", response)
 				if query.QueryID == response.QueryID {
 					latencyTime := response.ResponseTime.Sub(query.QueryTime)
 					response.Latency = latencyTime
-
+					if latencyTime < 0 || latencyTime > time.Minute*10 {
+						//reused qid
+						continue
+					}
 					if analyzer.verbose {
 						fmt.Printf("Query ID: %d, Latency Time: %s\n", query.QueryID, latencyTime)
 					}
@@ -175,17 +211,18 @@ func (analyzer *DnsAnalyzer) analyze() {
 					}
 				}
 			}
-			if !queryMatch && analyzer.verbose {
-				fmt.Printf("No response found for Query ID: %d\n", query.QueryID)
-			}
-		}()
+		}
+		if !queryMatch && analyzer.verbose {
+			fmt.Printf("No response found for Query ID: %d\n", query.QueryID)
+		}
+		//}()
 	}
 
 	//Wait for all my threads to finish.
-	wg.Wait()
+	//wg.Wait()
 
 	fmt.Printf("|  %10s  |  %10d  |\n", "Slow Queries", len(slowResps))
-	fmt.Printf("\nSaving slow queries to file\n")
+	fmt.Printf("\nSaving slow queries to file\n\n")
 
 	file, err := os.Create(analyzer.outputFile)
 	if err != nil {
@@ -202,9 +239,21 @@ func (analyzer *DnsAnalyzer) analyze() {
 		sort.Slice(latencyTimes, func(i, j int) bool {
 			return latencyTimes[i] < latencyTimes[j]
 		})
+
+		// Determine median of Latency Times
+		median := latencyTimes[len(latencyTimes)/2]
+		if len(latencyTimes)%2 == 0 {
+			median = (latencyTimes[len(latencyTimes)/2-1] + latencyTimes[len(latencyTimes)/2]) / 2
+		}
+
+		// Determine mean of latency times
+		mean := calculateMean(latencyTimes)
+
+		// Print output of various latency statistics
 		fmt.Printf("|  %10s  |  %10v  |\n", "Lowest Latency", latencyTimes[0])
 		fmt.Printf("|  %10s  |  %10v  |\n", "Highest Latency", latencyTimes[len(latencyTimes)-1])
-		fmt.Printf("|  %10s  |  %10v  |\n", "Median Latency", latencyTimes[len(latencyTimes)/2])
+		fmt.Printf("|  %10s  |  %10v  |\n", "Median Latency", median)
+		fmt.Printf("|  %10s  |  %10v  |\n\n", "Mean Latency", mean)
 	}
 
 	total := totalPackets
@@ -212,10 +261,10 @@ func (analyzer *DnsAnalyzer) analyze() {
 	percentageDifference := float64((total - slow)) / float64(total) * 100
 	fmt.Printf("|  %10s  |  %10d  |\n", "Total Packets", total)
 	fmt.Printf("|  %10s  |  %10d  |\n", "Slow Queries", slow)
-	fmt.Printf("|  %10s  |  %10.3f  |\n", "Percentage Difference", percentageDifference)
+	fmt.Printf("|  %10s  |  %10.3f  |\n\n", "Percentage Good", percentageDifference)
 
 	// Save sorted record names and their counts to the report file
-	fmt.Printf("\nSaving Total Names Queried Report\n")
+	fmt.Printf("Saving Total Names Queried Report\n\n")
 	reportFile, err := os.Create(analyzer.reportFile)
 	if err != nil {
 		panic(err)
