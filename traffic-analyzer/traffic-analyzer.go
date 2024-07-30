@@ -9,7 +9,6 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/google/gopacket"
@@ -100,7 +99,6 @@ func NewDnsAnalyzer(captureFile, sourceIP string, timeDelay time.Duration, outpu
 }
 
 func (analyzer *DnsAnalyzer) processPacket(packet gopacket.Packet) {
-	//fmt.Printf("Packet: %+v\n", packet)
 	if analyzer.verbose {
 		fmt.Println(packet)
 	}
@@ -173,28 +171,16 @@ func (analyzer *DnsAnalyzer) analyze() {
 
 	var latencyTimes []time.Duration
 	var slowResps []SlowResponse
-	var addMtx sync.Mutex
-	//var wg sync.WaitGroup
 
 	for _, query := range analyzer.queriesReceived {
-		//fmt.Printf("Considering query; %+v\n", query)
-
-		//wg.Add(1)
-		//Add a query goroutine to the waitgroup
-		//In this construction unlimited goroutines are spun up. Maybe limit to runtime.NumCPUs()
-		//go func() {
-		//Remove yourself from the workgroup after work is done.
-		//defer wg.Done()
 		queryMatch := false
 		responseArr, found := analyzer.responsesSent[query.Key]
 		if found {
 			for _, response := range responseArr {
-				//fmt.Printf("Considering response; %+v\n", response)
 				if query.QueryID == response.QueryID {
 					latencyTime := response.ResponseTime.Sub(query.QueryTime)
 					response.Latency = latencyTime
 					if latencyTime < 0 || latencyTime > time.Minute*10 {
-						//reused qid
 						continue
 					}
 					if analyzer.verbose {
@@ -203,11 +189,7 @@ func (analyzer *DnsAnalyzer) analyze() {
 					latencyTimes = append(latencyTimes, latencyTime)
 					queryMatch = true
 					if latencyTime > analyzer.timeDelay {
-						//Lock so that multiple threads dont access slowResps at the same time.
-						addMtx.Lock()
 						slowResps = append(slowResps, SlowResponse{Query: query, Response: response})
-						//Unlock after you're done.
-						addMtx.Unlock()
 					}
 				}
 			}
@@ -215,11 +197,7 @@ func (analyzer *DnsAnalyzer) analyze() {
 		if !queryMatch && analyzer.verbose {
 			fmt.Printf("No response found for Query ID: %d\n", query.QueryID)
 		}
-		//}()
 	}
-
-	//Wait for all my threads to finish.
-	//wg.Wait()
 
 	fmt.Printf("|  %10s  |  %10d  |\n", "Slow Queries", len(slowResps))
 	fmt.Printf("\nSaving slow queries to file\n\n")
