@@ -13,6 +13,8 @@ Inspred by [dns-traffic-analysis](https://github.com/mragusa/dns-traffic-analysi
   - capable of reading 1G pcap files in under 90 seconds
 * packet-reader
   - reads pcap file and displays DNS packet content to stdout
+* packet-splitter
+  - reads pcap file and creates a new pcap file based on the DNS Query ID provided
 
 ## Requirements
   - [Go](https://go.dev/dl/) version 1.22 or higher
