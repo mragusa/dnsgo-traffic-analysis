@@ -25,32 +25,38 @@ func main() {
 		flag.Usage()
 		return
 	}
-
+	// If output file is empty, assign default name as QueryID.pcap
 	if *outputFile == "" {
 		*outputFile = *queryID + ".pcap"
 	}
-
-	handle, err := pcap.OpenOffline(*captureFile)
+	// Open pcap file for processing
+	p, err := pcap.OpenOffline(*captureFile)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer handle.Close()
-
-	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
+	defer p.Close()
+	// Process pcap file
+	packetSource := gopacket.NewPacketSource(p, p.LinkType())
+	// Convert queryID to int
 	qID, err := strconv.ParseUint(*queryID, 10, 16)
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
 	}
+	// Create file to save output
 	f, err := os.Create(*outputFile)
 	if err != nil {
 		log.Fatal("Error creating output file:", err)
 	}
+	// Defer closing file until processing is done
 	defer f.Close()
 	writer := pcapgo.NewWriter(f)
-	linkType := handle.LinkType()
+	// Determine linktype from packet source
+	linkType := p.LinkType()
 	writer.WriteFileHeader(65536, linkType)
+	// Iternate thru file to find packets matching query ID
 	for packet := range packetSource.Packets() {
+		// Verify DNS layer is not empty
 		if dnsLayer := packet.Layer(layers.LayerTypeDNS); dnsLayer != nil {
 			dns, _ := dnsLayer.(*layers.DNS)
 			// Match DNS Query ID against user supplied QID
@@ -62,9 +68,10 @@ func main() {
 					fmt.Println("Packet Metadata:", packet.Metadata().CaptureInfo)
 					fmt.Println("Packet Data:", packet.Data())
 				}
-				//err := writer.WritePacket(packet.Metadata().CaptureInfo, packet.Data())
 				captureInfo := packet.Metadata().CaptureInfo
 				captureInfo.CaptureLength = len(packet.Data()) // Ensure CaptureLength matches packet data length
+				// Write packets to output file
+				// Write packeet requires metadata and raw packet data to write pcap files
 				err := writer.WritePacket(captureInfo, packet.Data())
 				if err != nil {
 					fmt.Println("Error writing packet:", err)
