@@ -101,9 +101,14 @@ Total Record Types Queried
 |         SRV  |  8050        |
 ```
 ### packet-reader
-#### Usage
 ```
-packet-reader 38188.pcap
+packet-reader.go -h
+  -file string
+        Traffic Capture File
+```
+#### Example 
+```
+packet-reader -file 38188.pcap
 ```
 ##### Output 
 ```
