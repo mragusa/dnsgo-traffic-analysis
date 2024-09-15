@@ -55,7 +55,8 @@ func main() {
 			dns, _ := dnsLayer.(*layers.DNS)
 			// Match DNS Query ID against user supplied QID
 			if dns.ID == uint16(qID) {
-				// Print debug statements
+				fmt.Println("Matching Packet Found for Query ID", *queryID)
+				// Print verbose statements
 				if *verbose {
 					fmt.Println("Matched packet:", packet)
 					fmt.Println("Packet Metadata:", packet.Metadata().CaptureInfo)
