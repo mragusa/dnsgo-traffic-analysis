@@ -1,9 +1,9 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
-	"os"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -11,20 +11,23 @@ import (
 )
 
 func main() {
-	if len(os.Args) != 2 {
-		fmt.Printf("Usage: %s <pcap file>\n", os.Args[0])
-		os.Exit(1)
+	captureFile := flag.String("file", "", "Traffic Capture File")
+	flag.Parse()
+	// Return usage if no capture file is provided
+	if *captureFile == "" {
+		flag.Usage()
+		return
 	}
-
-	pcapFile := os.Args[1]
-	handle, err := pcap.OpenOffline(pcapFile)
+	// Open capture file
+	p, err := pcap.OpenOffline(*captureFile)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer handle.Close()
-
-	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
+	defer p.Close()
+	// Process pcap file and display contents to stdout
+	packetSource := gopacket.NewPacketSource(p, p.LinkType())
 	for packet := range packetSource.Packets() {
+		// Retrieve timestamp from packet metadata
 		timestamp := packet.Metadata().Timestamp
 		fmt.Println(timestamp)
 		if dnsLayer := packet.Layer(layers.LayerTypeDNS); dnsLayer != nil {
