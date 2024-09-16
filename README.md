@@ -185,3 +185,28 @@ Packet Metadata: {2024-04-18 18:29:33.737143 -0400 EDT 191 191 0 []}
 Packet Data: [0 0 0 1 0 6 180 12 37 227 0 104 0 0 8 0 69 0 0 175 196 247 64 0 43 17 127 146 198 51 45 1 10 249 12 135 0 53 176 19 0 155 200 236 52 139 132 0 0 1 0 0 0 1 0 1 36 105 115 116 105 111 45 107 56 115 45 118 105 100 97 122 111 111 45 112 45 117 115 45 110 121 99 49 45 101 120 116 101 114 110 97 108 7 118 105 100 97 122 111 111 8 115 101 114 118 105 99 101 115 0 0 28 0 1 192 49 0 6 0 1 0 0 14 16 0 53 4 100 110 115 49 3 112 48 49 5 110 115 111 110 101 3 110 101 116 0 10 104 111 115 116 109 97 115 116 101 114 192 92 100 190 117 213 0 0 168 192 0 0 28 32 0 18 117 0 0 0 14 16 0 0 41 4 208 0 0 128 0 0 0]
 Finished writing matching packets to 13451.pcap
 ```
+### find-dns-servers
+#### Usage
+```
+find-dns-servers.go -help
+  -clients
+        Display Client IPs
+  -dns
+        Display DNS Servers
+  -file string
+        Traffic Capture File
+  -recursive
+        Display Recursive DNS Servers
+  -report
+        Report Total
+```
+##### Example
+```
+find-dns-servers.go -file small_slow_packets -report
+```
+##### Output
+```
+Total DNS Servers: 689
+Total Recursive Servers: 3
+Total Clients: 2082
+```
