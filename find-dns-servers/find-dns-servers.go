@@ -81,11 +81,11 @@ func main() {
 					dnsClientFound[dstIP] = 1
 				}
 				// Check if client IP was in DNS servers list to determine if IP is a recursive DNS server
-				if _, rServerExists := dnsServersFound[dstIP]; rServerExists {
+				if existingCount, rServerExists := dnsServersFound[dstIP]; rServerExists {
 					if count, exists := recursiveDNSServerFound[srcIP]; exists {
 						recursiveDNSServerFound[dstIP] = count + 1
 					} else {
-						recursiveDNSServerFound[dstIP] = 1
+						recursiveDNSServerFound[dstIP] = existingCount
 					}
 					delete(dnsClientFound, dstIP)
 					delete(dnsServersFound, dstIP)
