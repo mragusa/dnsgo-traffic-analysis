@@ -15,6 +15,8 @@ Inspred by [dns-traffic-analysis](https://github.com/mragusa/dns-traffic-analysi
   - reads pcap file and displays DNS packet content to stdout
 * packet-splitter
   - reads pcap file and creates a new pcap file based on the DNS Query ID provided
+* find-dns-servers
+  - reads pcap file and finds dns servers and clients
 
 ## Requirements
   - [Go](https://go.dev/dl/) version 1.22 or higher
