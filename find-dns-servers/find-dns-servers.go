@@ -43,13 +43,14 @@ func main() {
 			ipLayer = packet.Layer(layers.LayerTypeIPv6)
 		}
 		if ipLayer != nil {
-			var srcIP, dstIP string
+			//var srcIP, dstIP string
+			var dstIP string
 			switch ip := ipLayer.(type) {
 			case *layers.IPv4:
-				srcIP = ip.SrcIP.String()
+				//srcIP = ip.SrcIP.String()
 				dstIP = ip.DstIP.String()
 			case *layers.IPv6:
-				srcIP = ip.SrcIP.String()
+				//srcIP = ip.SrcIP.String()
 				dstIP = ip.DstIP.String()
 			}
 			var srcPort, dstPort layers.UDPPort
@@ -74,7 +75,6 @@ func main() {
 				}
 			}
 			if srcPort == 53 {
-				//fmt.Println("Client found", srcIP)
 				if count, found := dnsClientFound[dstIP]; found {
 					dnsClientFound[dstIP] = count + 1
 				} else {
@@ -82,15 +82,19 @@ func main() {
 				}
 				// Check if client IP was in DNS servers list to determine if IP is a recursive DNS server
 				if existingCount, rServerExists := dnsServersFound[dstIP]; rServerExists {
-					if count, exists := recursiveDNSServerFound[srcIP]; exists {
-						recursiveDNSServerFound[dstIP] = count + 1
+					if _, exists := recursiveDNSServerFound[dstIP]; exists {
+						recursiveDNSServerFound[dstIP] = existingCount + 1
 					} else {
 						recursiveDNSServerFound[dstIP] = existingCount
 					}
-					delete(dnsClientFound, dstIP)
-					delete(dnsServersFound, dstIP)
 				}
 			}
+		}
+	}
+	for dnsServer, _ := range recursiveDNSServerFound {
+		if _, exists := dnsServersFound[dnsServer]; exists {
+			delete(dnsClientFound, dnsServer)
+			delete(dnsServersFound, dnsServer)
 		}
 	}
 	if *displayDns {
