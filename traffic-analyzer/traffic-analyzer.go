@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"runtime"
 	"runtime/pprof"
@@ -103,20 +104,41 @@ func (analyzer *DnsAnalyzer) processPacket(packet gopacket.Packet) {
 		fmt.Println(packet)
 	}
 	if dnsLayer := packet.Layer(layers.LayerTypeDNS); dnsLayer != nil {
-		dns, _ := dnsLayer.(*layers.DNS)
-		ipLayer := packet.Layer(layers.LayerTypeIPv4)
-		ip, _ := ipLayer.(*layers.IPv4)
-		if ip.DstIP.String() == analyzer.sourceIP || ip.SrcIP.String() == analyzer.sourceIP {
+		dns, errb := dnsLayer.(*layers.DNS)
+		if errb {
+			//fmt.Println("Error parsing DNS layer")
+			//Look, not a DNS packet is stil happy path.
+			return
+		}
+
+		var srcIP, dstIP net.IP
+
+		if ip4Layer := packet.Layer(layers.LayerTypeIPv4); ip4Layer != nil {
+			ip4 := ip4Layer.(*layers.IPv4)
+			srcIP = ip4.SrcIP
+			dstIP = ip4.DstIP
+		} else if ip6Layer := packet.Layer(layers.LayerTypeIPv6); ip6Layer != nil {
+			ip6 := ip6Layer.(*layers.IPv6)
+			srcIP = ip6.SrcIP
+			dstIP = ip6.DstIP
+		} else {
+			// Definitely not happy path, lets die here.
+			fmt.Printf("\n\n\n%v+\n\n\n", packet)
+			panic("Error parsing IP layer")
+			return
+		}
+
+		if srcIP.String() == analyzer.sourceIP || dstIP.String() == analyzer.sourceIP {
 			if analyzer.verbose {
 				fmt.Println(dns)
 			}
 			if !dns.QR { // DNS query
-				if ip.DstIP.String() == analyzer.sourceIP {
+				if dstIP.String() == analyzer.sourceIP {
 					analyzer.queriesReceived = append(analyzer.queriesReceived, DnsQuery{
 						QueryID:      dns.ID,
 						QueryRequest: string(dns.Questions[0].Name),
 						QueryTime:    packet.Metadata().Timestamp,
-						Key:          fmt.Sprintf("%d%s", dns.ID, ip.SrcIP.String()),
+						Key:          fmt.Sprintf("%d%s", dns.ID, srcIP.String()),
 					})
 					analyzer.recordTypes[uint16(dns.Questions[0].Type)]++
 					analyzer.recordName[string(dns.Questions[0].Name)]++
@@ -132,7 +154,7 @@ func (analyzer *DnsAnalyzer) processPacket(packet gopacket.Packet) {
 					ResponseTime: packet.Metadata().Timestamp,
 					RRName:       string(answers),
 				}
-				key := fmt.Sprintf("%d%s", response.QueryID, ip.DstIP.String())
+				key := fmt.Sprintf("%d%s", response.QueryID, dstIP.String())
 
 				oldRes, found := analyzer.responsesSent[key]
 				if found {
