@@ -104,15 +104,14 @@ func (analyzer *DnsAnalyzer) processPacket(packet gopacket.Packet) {
 		fmt.Println(packet)
 	}
 	if dnsLayer := packet.Layer(layers.LayerTypeDNS); dnsLayer != nil {
-		dns, errb := dnsLayer.(*layers.DNS)
-		if errb {
-			//fmt.Println("Error parsing DNS layer")
-			//Look, not a DNS packet is stil happy path.
+		dns, err := dnsLayer.(*layers.DNS)
+		if !err {
+			fmt.Println("Error parsing DNS layer", packet)
 			return
 		}
-
+		// Source and Destination IP addresses are net.IP type
 		var srcIP, dstIP net.IP
-
+		// If IPv4 or IPv6 is detected, extract source and destination IP addresses
 		if ip4Layer := packet.Layer(layers.LayerTypeIPv4); ip4Layer != nil {
 			ip4 := ip4Layer.(*layers.IPv4)
 			srcIP = ip4.SrcIP
@@ -122,12 +121,10 @@ func (analyzer *DnsAnalyzer) processPacket(packet gopacket.Packet) {
 			srcIP = ip6.SrcIP
 			dstIP = ip6.DstIP
 		} else {
-			// Definitely not happy path, lets die here.
-			fmt.Printf("\n\n\n%v+\n\n\n", packet)
-			panic("Error parsing IP layer")
+			fmt.Println("Error parsing IP layer", packet)
 			return
 		}
-
+		// If the source or destination matches the user input, begin processing the packets
 		if srcIP.String() == analyzer.sourceIP || dstIP.String() == analyzer.sourceIP {
 			if analyzer.verbose {
 				fmt.Println(dns)
