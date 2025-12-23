@@ -33,6 +33,7 @@ Key capabilities:
   - `packet‑reader`: prints detailed DNS packet fields  
   - `packet‑splitter`: extracts packets for a given DNS query ID  
   - `find‑dns‑servers`: identifies DNS servers, clients, and recursive servers  
+  - `ad-keytabs`: Read Active Directory keytab files for Realm, Keytype(supported encryption type), and KVNO
 - 🚀 High performance: optimized for multi‑core environments and large PCAPs  
 - 🔍 Profiling support: built‑in `pprof` flags to analyze CPU/memory use  
 - 🧰 Minimal external dependencies (uses Go’s ecosystem and `gopacket`)  
@@ -44,6 +45,7 @@ Key capabilities:
 
 ```
 dnsgo‑traffic‑analysis/
+├── ad-keytabs/              # Go module to Active Directory Keytabs 
 ├── find‑dns‑servers/        # Go module to find DNS servers and clients
 ├── packet‑reader/           # Go module to parse and print DNS packets
 ├── packet‑splitter/         # Go module to extract PCAP subset by query ID
@@ -78,7 +80,7 @@ cd traffic‑analyzer
 go build -o traffic‑analyzer traffic‑analyzer.go
 ```
 
-Similarly for `packet‑reader`, `packet‑splitter`, and `find‑dns‑servers`.
+Similarly for `ad-keytabs`, `packet‑reader`, `packet‑splitter`, and `find‑dns‑servers`.
 
 ---
 
@@ -134,6 +136,16 @@ Extracts all packets matching DNS query ID `13451` into a separate PCAP file for
 ```
 
 Identifies DNS servers, clients, and recursive servers based on PCAP traffic.
+
+### ad-keytabs
+```bash
+./ad-keytabs.go -keytab /path/to/file
+```
+**Flags overview:**
+- `-aes-only` :  Show only AES enctypes (17, 18)
+- `-json` : Print raw JSON from kt.JSON() and exit
+- `-keytab` : Path to keytab file (required)
+- `-principle` : Filter to a specific principal, e.g. DNS/ns.example.com@EXAMPLE.COM
 
 ---
 
